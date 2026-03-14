@@ -1,10 +1,9 @@
 import { useState, type FormEvent } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAdminLoginMutation } from "../services/adminApi";
-import { useSelector, useDispatch } from "react-redux";
+import { useDispatch } from "react-redux";
 import { Loading } from "../components/ui/loading";
 import { setAdminSession } from "../slices/userSlice";
-import type { RootState } from "../store";
 
 function getErrorMessage(error: any): string {
   if (!error) return "";

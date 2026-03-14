@@ -1,6 +1,7 @@
-const { sendResponse } = require("../utils/responses")
-const { Session, User, Player } = require("../models")
-const sessionLoader = require("../utils/sessionLoader")
+const { sendResponse } = require("../utils/responses.js")
+const { Session, Player } = require("../models")
+const sessionLoader = require("../utils/sessionLoader.js")
+const { getIo, initSessionState, startTimerForSession } = require("../socket.js")
 
 class SessionController {
     async createSession(req, res) {
@@ -39,7 +40,7 @@ class SessionController {
             
             const sessionsWithCounts = sessions.map(session => ({
                 ...session.toJSON(),
-                participantCount: session.Users ? session.Users.length : 0
+                participantCount: session.Players ? session.Players.length : 0
             }))
             
             return sendResponse(res, 200, sessionsWithCounts)
@@ -65,10 +66,6 @@ class SessionController {
             
             if (!session) {
                 return sendResponse(res, 404, "Session not found")
-            }
-
-            if (session.adminId !== req.user.id) {
-                return sendResponse(res, 403, "Access denied")
             }
 
             return sendResponse(res, 200, session)
@@ -97,11 +94,6 @@ class SessionController {
             }
 
             // Check if at least 2 participants have joined
-            const participantCount = await User.count({ where: { sessionId: session.id } })
-            if (participantCount < 2) {
-                return sendResponse(res, 400, "At least 2 participants are required to start the session")
-            }
-
             session.status = "active"
             session.currentStep = 1
             
@@ -112,12 +104,16 @@ class SessionController {
             
             await session.save()
             
-            req.io.to(`session:${session.roomCode}`).emit("session_started", {
+            const io = getIo();
+            io.to(`session:${session.roomCode}`).emit("session_started", {
                 sessionId: session.id,
                 roomCode: session.roomCode,
                 status: session.status,
                 currentActivity: firstActivity
             })
+
+            await initSessionState(session);
+            startTimerForSession(session.id);
 
             return sendResponse(res, 200, session)
         } catch (error) {
@@ -133,9 +129,9 @@ class SessionController {
             const session = await Session.findByPk(id, {
                 include: [
                     {
-                        model: User,
-                        as: 'Users',
-                        attributes: ['id', 'firstName', 'lastName', 'fullName']
+                        model: Player,
+                        as: 'Players',
+                        attributes: ['id', 'firstName', 'lastName', 'totalScore']
                     }
                 ]
             })

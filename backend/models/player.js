@@ -23,7 +23,10 @@ module.exports = (sequelize, DataTypes) => {
     sessionId: {
       type: DataTypes.INTEGER
     },
-    totalScore: DataTypes.INTEGER,
+    totalScore: {
+      type: DataTypes.INTEGER,
+      defaultValue: 0
+    },
     firstName: DataTypes.STRING,
     lastName: DataTypes.STRING
   }, {

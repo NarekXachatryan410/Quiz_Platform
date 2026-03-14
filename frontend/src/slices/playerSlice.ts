@@ -5,6 +5,7 @@ interface PlayerState {
   firstName: string;
   lastName: string;
   sessionId: number | null;
+  totalScore: number;
 }
 
 const initialState: PlayerState = {
@@ -12,6 +13,7 @@ const initialState: PlayerState = {
   firstName: "",
   lastName: "",
   sessionId: null,
+  totalScore: 0,
 };
 
 const playerSlice = createSlice({
@@ -21,9 +23,12 @@ const playerSlice = createSlice({
     setPlayer: (state, action: PayloadAction<PlayerState>) => {
       return { ...state, ...action.payload };
     },
+    updateTotalScore: (state, action: PayloadAction<number>) => {
+      state.totalScore = action.payload;
+    },
     clearPlayer: () => initialState,
   },
 });
 
-export const { setPlayer, clearPlayer } = playerSlice.actions;
+export const { setPlayer, updateTotalScore, clearPlayer } = playerSlice.actions;
 export default playerSlice.reducer;

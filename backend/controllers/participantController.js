@@ -1,5 +1,5 @@
 const { sendResponse } = require("../utils/responses")
-const { Session, User } = require("../models")
+const { Session, Player } = require("../models")
 
 class ParticipantController {
     async joinSession(req, res) {
@@ -20,13 +20,13 @@ class ParticipantController {
                 return sendResponse(res, 400, "Session has ended")
             }
 
-            const participantCount = await User.count({ where: { sessionId: session.id } })
+            const participantCount = await Player.count({ where: { sessionId: session.id } })
             if (participantCount >= session.maxParticipants) {
                 return sendResponse(res, 400, "Room is full")
             }
 
             // Check for duplicate names
-            const existingUser = await User.findOne({
+            const existingUser = await Player.findOne({
                 where: { 
                     sessionId: session.id,
                     firstName,
@@ -38,14 +38,13 @@ class ParticipantController {
                 return sendResponse(res, 409, "This name is already taken. Please add a middle name or distinguishing suffix.")
             }
 
+            const player = await Player.create({sessionId: session.id, firstName, lastName})
+
             return sendResponse(res, 200, {
-                session: {
-                    id: session.id,
-                    name: session.name,
-                    roomCode: session.roomCode,
-                    status: session.status,
-                    maxParticipants: session.maxParticipants,
-                    currentStep: session.currentStep
+                player: {
+                    id: player.id,
+                    firstName: player.firstName,
+                    lastName: player.lastName,
                 }
             })
 
@@ -63,9 +62,9 @@ class ParticipantController {
                 where: { roomCode },
                 include: [
                     {
-                        model: User,
-                        as: 'Users',
-                        attributes: ['id', 'firstName', 'lastName', 'fullName']
+                        model: Player,
+                        as: 'Players',
+                        attributes: ['id', 'firstName', 'lastName']
                     }
                 ]
             })
@@ -81,7 +80,7 @@ class ParticipantController {
                 status: session.status,
                 maxParticipants: session.maxParticipants,
                 currentStep: session.currentStep,
-                participants: session.Users || []
+                participants: session.Players || []
             })
 
         } catch (error) {

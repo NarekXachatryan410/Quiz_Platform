@@ -13,7 +13,7 @@ adminRouter.post('/logout', adminController.logout)
 adminRouter.get('/profile', authMiddleware, adminController.getProfile)
 sessionRouter.post('/sessions', authMiddleware, sessionController.createSession)
 sessionRouter.get('/sessions', authMiddleware, sessionController.getSessions)
-sessionRouter.get('/sessions/:id', authMiddleware, sessionController.getSessionById)
+sessionRouter.get('/sessions/:id', sessionController.getSessionById)
 sessionRouter.get('/sessions/:id/lobby', authMiddleware, sessionController.getLobby)
 sessionRouter.patch('/sessions/:id/start', authMiddleware, sessionController.startSession)
 

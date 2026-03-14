@@ -30,9 +30,12 @@ export default function AdminDashboard() {
     }
   };
 
+  const [startSession] = useStartSessionMutation();
+
   const handleStartSession = async (sessionId: number) => {
     try {
       setStartingSessionId(sessionId);
+      await startSession(sessionId).unwrap();
       navigate(`/sessions/${sessionId}`);
     } catch (err) {
       console.error("Failed to start session:", err);

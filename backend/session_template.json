@@ -16,20 +16,20 @@
         "questions": [
           {
             "id": "q1",
-            "text": "Question one text here?",
-            "options": ["Option A", "Option B", "Option C", "Option D"],
-            "correct_index": 0
-          },
-          {
-            "id": "q2",
-            "text": "Question two text here?",
-            "options": ["Choice 1", "Choice 2", "Choice 3", "Choice 4"],
+            "text": "What is the capital of France?",
+            "options": ["Berlin", "Madrid", "Paris", "Rome"],
             "correct_index": 2
           },
           {
+            "id": "q2",
+            "text": "What is 2 + 2?",
+            "options": ["3", "4", "5", "6"],
+            "correct_index": 1
+          },
+          {
             "id": "q3",
-            "text": "Question three text here?",
-            "options": ["Answer A", "Answer B", "Answer C", "Answer D"],
+            "text": "Which planet is known as the Red Planet?",
+            "options": ["Venus", "Mars", "Jupiter", "Saturn"],
             "correct_index": 1
           }
         ]

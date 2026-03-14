@@ -4,6 +4,7 @@ import { ProtectedRoute } from "../ProtectedRoutes";
 import JoinRoomPage from "../pages/joinRoom";
 import AdminDashboard from "../pages/dashboard";
 import SessionRoomPage from "../pages/sessionRoom";
+import ParticipantSessionPage from "../pages/participantSession";
 
 export const routes = createBrowserRouter([
   {
@@ -23,6 +24,10 @@ export const routes = createBrowserRouter([
   {
     path: '/sessions/:id',
     element: <SessionRoomPage />
+  },
+  {
+    path: '/play/:id',
+    element: <ParticipantSessionPage />
   },
   {
     path: "*",

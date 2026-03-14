@@ -73,7 +73,7 @@ export const sessionApi = createApi({
           body: data
         }),
         invalidatesTags: ["Sessions"],
-        transformResponse: (res) => res?.data
+        transformResponse: (res: any) => res?.data
       }
     )
   }),

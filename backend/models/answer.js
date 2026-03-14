@@ -11,7 +11,7 @@ module.exports = (sequelize, DataTypes) => {
      */
     static associate(models) {
       Answer.belongsTo(models.Question, { foreignKey: "questionId" })
-      Answer.belongsTo(models.User, { foreignKey: "userId" })
+      Answer.belongsTo(models.Player, { foreignKey: "userId" })
     }
   }
   Answer.init({
