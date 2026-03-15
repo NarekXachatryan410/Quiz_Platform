@@ -16,6 +16,7 @@ sessionRouter.get('/sessions', authMiddleware, sessionController.getSessions)
 sessionRouter.get('/sessions/:id', sessionController.getSessionById)
 sessionRouter.get('/sessions/:id/lobby', authMiddleware, sessionController.getLobby)
 sessionRouter.patch('/sessions/:id/start', authMiddleware, sessionController.startSession)
+sessionRouter.delete('/sessions/:id', authMiddleware, sessionController.deleteSession)
 
 // Participant routes (no auth required)
 participantRouter.post('/join', participantController.joinSession)

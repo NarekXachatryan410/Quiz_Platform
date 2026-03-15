@@ -1,5 +1,5 @@
 const { Server } = require("socket.io");
-const { Session, Player, Answer } = require("./models");
+const { Session, Player, Answer, Activity, Question } = require("./models");
 const sessionLoader = require("./utils/sessionLoader");
 
 let ioInstance = null;
@@ -50,6 +50,7 @@ function emitSessionState(sessionId) {
       currentActivityId: state.currentActivityId,
       currentActivityStep: state.currentActivityStep,
       questionIndex: state.questionIndex,
+      currentQuestion: state.currentActivity?.questions?.[state.questionIndex] ?? null,
       timer,
     });
 
@@ -84,12 +85,30 @@ async function emitTimerUpdate(sessionId) {
   if (remainingSeconds <= 0) {
     clearInterval(state.interval);
     state.timer.running = false;
+
+    // Persist that the timer has finished so reconnecting clients don't resume it
+    try {
+      const session = await Session.findByPk(sessionId);
+      if (session) {
+        session.timerEndAt = null;
+        session.timerDurationSeconds = null;
+        await session.save();
+      }
+    } catch (error) {
+      console.error('Failed to clear session timer state:', error);
+    }
+
     ioInstance
       .to(getRoomKey(state.roomCode))
       .emit("timer_finished", { sessionId });
 
     // After timer finishes, broadcast question finished with correct answer and leaderboard
-    const question = state.currentActivity.questions[state.questionIndex];
+    const question = state.currentActivity?.questions?.[state.questionIndex];
+    if (!question) {
+      // Nothing to do if question is missing; avoid crashes
+      return;
+    }
+
     const answers = await Answer.findAll({
       where: { questionId: question.id },
     });
@@ -100,25 +119,54 @@ async function emitTimerUpdate(sessionId) {
       distribution[answer.answer]++;
     });
 
-    getLeaderboard(state.sessionId).then((leaderboard) => {
+    getLeaderboard(state.sessionId).then(async (leaderboard) => {
       ioInstance.to(getRoomKey(state.roomCode)).emit("question_finished", {
         questionId: question.id,
-        correctAnswer: question.correct_index,
+        correctAnswer: question.correctIndex,
         distribution,
         leaderboard,
       });
+
+      // If this was the last question and there is no further activity, mark the game finished.
+      const isLastQuestion =
+        state.questionIndex >= (state.currentActivity?.questions?.length ?? 0) - 1;
+
+      if (isLastQuestion) {
+        const nextActivity = await Activity.findOne({
+          where: {
+            sessionId: state.sessionId,
+            step: (state.currentActivity?.step ?? 0) + 1,
+          },
+        });
+
+        if (!nextActivity) {
+          const session = await Session.findByPk(state.sessionId);
+          if (session) {
+            session.status = "finished";
+            await session.save();
+          }
+
+          state.status = "finished";
+          clearSessionState(sessionId);
+
+          ioInstance.to(getRoomKey(state.roomCode)).emit("game_finished", {
+            sessionId: state.sessionId,
+          });
+        }
+      }
     });
   }
 }
 
-function startTimerForSession(sessionId) {
+async function startTimerForSession(sessionId) {
   const state = getSessionState(sessionId);
   if (!state) return;
 
   const activity = state.currentActivity;
   if (!activity) return;
 
-  const duration = 10; // Fixed 10-second timer
+  const duration =
+    activity.timerSeconds ?? activity.timer_seconds ?? 10; // Prefer DB timerSeconds, fall back to template value
   const endAt = Date.now() + duration * 1000;
 
   state.timer = {
@@ -126,6 +174,19 @@ function startTimerForSession(sessionId) {
     endAt,
     running: true,
   };
+
+  // Persist timer state so reconnecting clients can restore without reset
+  try {
+    const session = await Session.findByPk(sessionId);
+    if (session) {
+      session.timerEndAt = new Date(endAt);
+      session.timerDurationSeconds = duration;
+      session.currentQuestionIndex = state.questionIndex;
+      await session.save();
+    }
+  } catch (error) {
+    console.error('Failed to persist timer state:', error);
+  }
 
   if (state.interval) {
     clearInterval(state.interval);
@@ -179,8 +240,39 @@ function resumeTimer(sessionId) {
 }
 
 async function initSessionState(session) {
-  const template = sessionLoader.getSessionTemplate();
-  const activity = template.activities.find((a) => a.id === session.currentActivityId);
+  // Load current activity + questions from the database so state can be reconstructed
+  // If session.currentActivityId is a non-numeric template ID (e.g. "act_1"), fall back to finding by step.
+  let activity = null;
+
+  const numericActivityId = Number(session.currentActivityId);
+  if (Number.isInteger(numericActivityId)) {
+    activity = await Activity.findByPk(numericActivityId);
+  }
+
+  if (!activity) {
+    // Fallback: use session.currentStep to locate the activity
+    const step = Number(session.currentStep) || 1;
+    activity = await Activity.findOne({
+      where: { sessionId: session.id, step },
+    });
+  }
+
+  let questions = [];
+  if (activity) {
+    questions = await Question.findAll({
+      where: { activityId: activity.id },
+      order: [['id', 'ASC']],
+    });
+  }
+
+  const currentActivity = activity
+    ? {
+        ...activity.toJSON(),
+        questions: questions.map((q) => q.toJSON()),
+      }
+    : null;
+
+  const questionIndex = session.currentQuestionIndex ?? 0;
 
   const state = {
     sessionId: session.id,
@@ -188,13 +280,27 @@ async function initSessionState(session) {
     status: session.status,
     currentActivityId: activity?.id,
     currentActivityStep: activity?.step,
-    currentActivity: activity,
-    questionIndex: 0,
+    currentActivity,
+    questionIndex,
     timer: null,
     interval: null,
   };
 
   setSessionState(session.id, state);
+
+  // If the session had an active timer in the DB, resume it
+  if (session.status === 'active' && session.timerEndAt) {
+    const remainingSeconds = calculateRemainingSeconds(new Date(session.timerEndAt));
+    if (remainingSeconds > 0) {
+      state.timer = {
+        duration: session.timerDurationSeconds,
+        endAt: new Date(session.timerEndAt),
+        running: true,
+      };
+      state.interval = setInterval(() => emitTimerUpdate(session.id), 1000);
+    }
+  }
+
   return state;
 }
 
@@ -422,12 +528,11 @@ function initSocket(httpServer) {
         const normalizedRoom = session.roomCode;
 socket.join(`admin:${session.adminId}`);
 
-        
         socket.join(getRoomKey(normalizedRoom));
 
         socket.sessionId = session.id;
-        socket.roomCode = normalizedRoom;
-
+        socket.currentSessionId = session.id;
+        socket.adminId = session.adminId;
         await emitParticipants(normalizedRoom);
         if (session.status === "active") {
           if (!getSessionState(session.id)) {
@@ -445,17 +550,34 @@ socket.join(`admin:${session.adminId}`);
 
     socket.on("submit_quiz_answer", async (payload) => {
       try {
-        const { questionId, selectedOption } = payload;
+        const { questionId, selectedOption: rawSelectedOption } = payload;
+        const selectedOption = Number(rawSelectedOption);
 
         if (!socket.sessionId || !socket.userId) {
           socket.emit("error", { message: "Not in a session" });
           return;
         }
 
+        const session = await Session.findByPk(socket.sessionId);
+
+        const state = getSessionState(session.id);
+        if (!state || state.currentActivity?.type !== "quiz") {
+          socket.emit("error", { message: "No active quiz question" });
+          return;
+        }
+
+        // Resolve the active question for this session state (avoid relying on client-supplied IDs)
+        const activeQuestion = state.currentActivity?.questions?.[state.questionIndex];
+
+        if (!activeQuestion) {
+          socket.emit("error", { message: "No active question" });
+          return;
+        }
+
         const existingAnswer = await Answer.findOne({
           where: {
             userId: socket.userId,
-            questionId,
+            questionId: activeQuestion.id,
           },
         });
 
@@ -464,46 +586,12 @@ socket.join(`admin:${session.adminId}`);
           return;
         }
 
-        const session = await Session.findByPk(socket.sessionId);
-
-        const sessionTemplate = sessionLoader.getSessionTemplate();
-
-        const currentActivity = sessionTemplate.activities.find(
-          (activity) => activity.id === session.currentActivityId
-        );
-
-        if (!currentActivity || currentActivity.type !== "quiz") {
-          socket.emit("error", { message: "No active quiz question" });
-          return;
-        }
-
-        const question = currentActivity.questions.find(
-          (q) => q.id === questionId
-        );
-
-        if (!question) {
-          socket.emit("error", { message: "Invalid question" });
-          return;
-        }
-
-        const state = getSessionState(session.id);
-        const remainingSeconds = state?.timer
-          ? calculateRemainingSeconds(state.timer.endAt)
-          : 0;
-
-        const isCorrect = selectedOption === question.correct_index;
-
-        const score = isCorrect
-          ? calculateQuizScore(
-              remainingSeconds,
-              10, // Fixed 10-second timer
-              currentActivity.scoring.base_points
-            )
-          : 0;
+        const isCorrect = selectedOption === Number(activeQuestion.correctIndex);
+        const score = isCorrect ? 25 : 0;
 
         await Answer.create({
           userId: socket.userId,
-          questionId,
+          questionId: activeQuestion.id,
           answer: selectedOption,
           timeSubmitted: new Date(),
           pointsAwarded: score,
@@ -529,7 +617,7 @@ socket.join(`admin:${session.adminId}`);
         socket.emit("answer_submitted", {
           isCorrect,
           score,
-          correctAnswer: question.correct_index,
+          correctAnswer: activeQuestion.correctIndex,
           totalScore: player.totalScore,
         });
 
@@ -608,6 +696,55 @@ socket.join(`admin:${session.adminId}`);
       }
     });
 
+    /* ---------------- FINISH SESSION (ADMIN) ---------------- */
+
+    socket.on("finish_session", async () => {
+      try {
+        const sessionId = socket.currentSessionId || socket.sessionId;
+        if (!sessionId) {
+          socket.emit("error", { message: "Not in an admin session" });
+          return;
+        }
+
+        const session = await Session.findByPk(sessionId);
+        if (!session) {
+          socket.emit("error", { message: "Session not found" });
+          return;
+        }
+
+        // Delete all associated data in the correct order
+        const activities = await Activity.findAll({ where: { sessionId: session.id } });
+        const activityIds = activities.map((a) => a.id);
+
+        const questions = await Question.findAll({ where: { activityId: activityIds } });
+        const questionIds = questions.map((q) => q.id);
+
+        if (questionIds.length) {
+          await Answer.destroy({ where: { questionId: questionIds } });
+        }
+
+        if (activityIds.length) {
+          await Question.destroy({ where: { activityId: activityIds } });
+          await Activity.destroy({ where: { id: activityIds } });
+        }
+
+        await Player.destroy({ where: { sessionId: session.id } });
+        await Session.destroy({ where: { id: session.id } });
+
+        // Clear in-memory state
+        clearSessionState(session.id);
+
+        ioInstance.to(getRoomKey(session.roomCode)).emit("game_finished", {
+          sessionId: session.id,
+        });
+
+        socket.emit("session_finished_confirmed", { sessionId: session.id });
+      } catch (error) {
+        console.error("Finish session error:", error);
+        socket.emit("error", { message: "Failed to finish session" });
+      }
+    });
+
     /* ---------------- CONFIRM PUZZLE SCORES ---------------- */
 
     socket.on("confirm_puzzle_scores", async ({ scores }) => {
@@ -640,32 +777,43 @@ socket.join(`admin:${session.adminId}`);
         if (!state) return;
 
         const session = await Session.findByPk(sessionId);
-        const template = sessionLoader.getSessionTemplate();
 
         state.questionIndex++;
 
         if (state.questionIndex < state.currentActivity.questions.length) {
           // Next question in current activity
-          startTimerForSession(sessionId);
+          await startTimerForSession(sessionId);
         } else {
           // End of current activity, advance to next activity
           const currentStep = state.currentActivityStep;
-          const nextActivity = template.activities.find(a => a.step === currentStep + 1);
+
+          const nextActivity = await Activity.findOne({
+            where: { sessionId: sessionId, step: currentStep + 1 },
+          });
 
           if (nextActivity) {
+            const nextQuestions = await Question.findAll({
+              where: { activityId: nextActivity.id },
+              order: [['id', 'ASC']],
+            });
+
             // Advance to next activity
             session.currentActivityId = nextActivity.id;
             session.currentStep = nextActivity.step;
+            session.currentQuestionIndex = 0;
             await session.save();
 
             // Update session state
             state.currentActivityId = nextActivity.id;
             state.currentActivityStep = nextActivity.step;
-            state.currentActivity = nextActivity;
+            state.currentActivity = {
+              ...nextActivity.toJSON(),
+              questions: nextQuestions.map((q) => q.toJSON()),
+            };
             state.questionIndex = 0;
 
             // Start the next activity
-            startTimerForSession(sessionId);
+            await startTimerForSession(sessionId);
           } else {
             // No more activities, end session
             session.status = 'finished';

@@ -21,9 +21,9 @@ sessionLoader.loadSessionTemplate()
     process.exit(1);
   });
 
-db.sequelize.sync({alter: true})
-.then(() => console.log("✅ Database synced"))
-.catch(err => console.log("❌ Database sync error:", err.message))
+db.sequelize.sync()
+  .then(() => console.log("✅ Database synced"))
+  .catch(err => console.log("❌ Database sync error:", err.message))
 
 app.use(cors({
     origin: "*",

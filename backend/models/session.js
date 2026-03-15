@@ -40,6 +40,12 @@ module.exports = (sequelize, DataTypes) => {
       defaultValue: 0
     },
     currentActivityId: DataTypes.STRING,
+    currentQuestionIndex: {
+      type: DataTypes.INTEGER,
+      defaultValue: 0
+    },
+    timerEndAt: DataTypes.DATE,
+    timerDurationSeconds: DataTypes.INTEGER,
     adminId: {
       type: DataTypes.INTEGER,
       allowNull: false
