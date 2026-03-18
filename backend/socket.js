@@ -52,6 +52,7 @@ function emitSessionState(sessionId) {
       questionIndex: state.questionIndex,
       currentQuestion: state.currentActivity?.questions?.[state.questionIndex] ?? null,
       timer,
+      questionFinished: state.questionFinished,
     });
 
   // Also send the current leaderboard so reconnecting clients can immediately show scores
@@ -85,6 +86,7 @@ async function emitTimerUpdate(sessionId) {
   if (remainingSeconds <= 0) {
     clearInterval(state.interval);
     state.timer.running = false;
+    state.questionFinished = true;
 
     // Persist that the timer has finished so reconnecting clients don't resume it
     try {
@@ -174,6 +176,7 @@ async function startTimerForSession(sessionId) {
     endAt,
     running: true,
   };
+  state.questionFinished = false;
 
   // Persist timer state so reconnecting clients can restore without reset
   try {
@@ -284,6 +287,7 @@ async function initSessionState(session) {
     questionIndex,
     timer: null,
     interval: null,
+    questionFinished: false,
   };
 
   setSessionState(session.id, state);
@@ -442,6 +446,13 @@ function initSocket(httpServer) {
 
         if (session.status !== "waiting") {
           socket.emit("join_error", { message: "Game already started" });
+          return;
+        }
+
+        // Enforce max participants per session
+        const participantCount = await Player.count({ where: { sessionId: session.id } });
+        if (participantCount >= session.maxParticipants) {
+          socket.emit("join_error", { message: "Room is full" });
           return;
         }
 
