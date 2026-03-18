@@ -65,6 +65,13 @@ export const sessionApi = createApi({
         invalidatesTags: ["Sessions"],
       }
     ),
+    deleteSession: builder.mutation<{ deleted: boolean }, number>({
+      query: (sessionId) => ({
+        url: `/admin/sessions/${sessionId}`,
+        method: "DELETE",
+      }),
+      invalidatesTags: ["Sessions"],
+    }),
     joinSession: builder.mutation<ApiResponse<Session>, any>(
       {
         query: (data) => ({
@@ -84,5 +91,6 @@ export const {
   useGetSessionsQuery,
   useGetSessionByIdQuery,
   useStartSessionMutation,
+  useDeleteSessionMutation,
   useJoinSessionMutation
 } = sessionApi;

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { useGetSessionByIdQuery } from "../services/sessionApi";
 import socket from "../services/socket";
 
@@ -11,6 +11,7 @@ type JoinedPlayer = {
 };
 
 export default function SessionRoomPage() {
+  const navigate = useNavigate();
   const { id } = useParams();
   const sessionId = Number(id);
 
@@ -19,6 +20,7 @@ export default function SessionRoomPage() {
   });
 
   const [players, setPlayers] = useState<JoinedPlayer[]>([]);
+  const [leaderboard, setLeaderboard] = useState<JoinedPlayer[]>([]);
   const [questionFinished, setQuestionFinished] = useState(false);
   const [answerDistribution, setAnswerDistribution] = useState<any>(null);
   const [submissions, setSubmissions] = useState<{ playerName: string; score: number; isCorrect: boolean }[]>([]);
@@ -36,6 +38,9 @@ export default function SessionRoomPage() {
 
     const handleParticipantsUpdated = (list: JoinedPlayer[]) => {
       setPlayers(list);
+      setLeaderboard(
+        [...list].sort((a, b) => b.totalScore - a.totalScore)
+      );
     };
 
     socket.on("players_gotten", handlePlayers);
@@ -59,6 +64,19 @@ export default function SessionRoomPage() {
 
     socket.on("player_answer_submitted", (data) => {
       setSubmissions((prev) => [...prev, data]);
+    });
+
+    socket.on("leaderboard_updated", (data) => {
+      setLeaderboard(data.leaderboard);
+    });
+
+    socket.on("session_state", (data) => {
+      // Restore question-finished state on reload
+      setQuestionFinished(Boolean(data.questionFinished));
+    });
+
+    socket.on("game_finished", () => {
+      navigate("/admin/dashboard");
     });
 
     // Join the socket room so we receive real-time updates when players join
@@ -125,14 +143,13 @@ export default function SessionRoomPage() {
             <ul style={{ margin: 0, paddingLeft: "20px" }}>
               {players.map((player) => (
                 <li key={player.id} style={{ marginBottom: "8px" }}>
-                  {player.firstName} {player.lastName}
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
+                    {player.firstName} {player.lastName} — {player.totalScore} points
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
 
-        {submissions.length > 0 && (
           <section
             style={{
               marginTop: "24px",
@@ -142,16 +159,41 @@ export default function SessionRoomPage() {
               boxShadow: "0 8px 20px rgba(15, 23, 42, 0.08)",
             }}
           >
-            <h2>Answer Submissions</h2>
-            <ul style={{ margin: 0, paddingLeft: "20px" }}>
-              {submissions.map((sub, index) => (
-                <li key={index} style={{ marginBottom: "8px" }}>
-                  {sub.playerName}: {sub.isCorrect ? "✅" : "❌"} +{sub.score} points
-                </li>
-              ))}
-            </ul>
+            <h2 style={{ marginTop: 0 }}>Leaderboard</h2>
+
+            {leaderboard.length === 0 ? (
+              <p style={{ color: "#64748b" }}>No scores yet.</p>
+            ) : (
+              <ol style={{ margin: 0, paddingLeft: "20px" }}>
+                {leaderboard.map((player) => (
+                  <li key={player.id} style={{ marginBottom: "8px" }}>
+                    {player.firstName} {player.lastName} — {player.totalScore} points
+                  </li>
+                ))}
+              </ol>
+            )}
           </section>
-        )}
+
+          {submissions.length > 0 && (
+            <section
+              style={{
+                marginTop: "24px",
+                background: "white",
+                borderRadius: "12px",
+                padding: "20px",
+                boxShadow: "0 8px 20px rgba(15, 23, 42, 0.08)",
+              }}
+            >
+              <h2>Answer Submissions</h2>
+              <ul style={{ margin: 0, paddingLeft: "20px" }}>
+                {submissions.map((sub, index) => (
+                  <li key={index} style={{ marginBottom: "8px" }}>
+                    {sub.playerName}: {sub.isCorrect ? "✅" : "❌"} +{sub.score} points
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
 
         {questionFinished && (
           <section
@@ -173,20 +215,36 @@ export default function SessionRoomPage() {
                 ))}
               </div>
             )}
-            <button
-              onClick={() => socket.emit("advance_question", { sessionId })}
-              style={{
-                padding: "12px 20px",
-                borderRadius: "10px",
-                background: "#16a34a",
-                color: "white",
-                fontWeight: 600,
-                border: "none",
-                cursor: "pointer",
-              }}
-            >
-              Next Question
-            </button>
+            <div style={{ display: "flex", gap: "12px", marginTop: "18px" }}>
+              <button
+                onClick={() => socket.emit("advance_question", { sessionId })}
+                style={{
+                  padding: "12px 20px",
+                  borderRadius: "10px",
+                  background: "#16a34a",
+                  color: "white",
+                  fontWeight: 600,
+                  border: "none",
+                  cursor: "pointer",
+                }}
+              >
+                Next Question
+              </button>
+              <button
+                onClick={() => socket.emit("finish_session")}
+                style={{
+                  padding: "12px 20px",
+                  borderRadius: "10px",
+                  background: "#ef4444",
+                  color: "white",
+                  fontWeight: 600,
+                  border: "none",
+                  cursor: "pointer",
+                }}
+              >
+                Finish Session
+              </button>
+            </div>
           </section>
         )}
       </div>

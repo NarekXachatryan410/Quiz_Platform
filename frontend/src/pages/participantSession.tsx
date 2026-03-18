@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { useSelector, useDispatch } from "react-redux";
 import { updateTotalScore } from "../slices/playerSlice";
 import type { RootState } from "../store";
@@ -18,6 +18,7 @@ type Question = {
 };
 
 export default function ParticipantSessionPage() {
+  const navigate = useNavigate();
   const { id } = useParams();
   const sessionId = Number(id);
 
@@ -35,6 +36,7 @@ export default function ParticipantSessionPage() {
   const [correctAnswer, setCorrectAnswer] = useState<number | null>(null);
   const [lastScore, setLastScore] = useState<number | null>(null);
   const [lastAnswerCorrect, setLastAnswerCorrect] = useState<boolean | null>(null);
+  const [showLeaderboard, setShowLeaderboard] = useState(false);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -81,6 +83,8 @@ export default function ParticipantSessionPage() {
 
     const handleSessionWaiting = () => {
       setStatus("waiting");
+      setTimerRemaining(0);
+      setTimerEndAt(null);
     };
 
     const handleSessionState = (data: any) => {
@@ -90,14 +94,19 @@ export default function ParticipantSessionPage() {
       }
       if (data.currentQuestion) {
         setCurrentQuestion(data.currentQuestion);
+        setShowLeaderboard(false);
       }
     };
 
     const handleQuestionStarted = (data: any) => {
       setCurrentQuestion(data.question);
+      setShowLeaderboard(false);
       if (data.timer?.endAt) {
         setTimerEndAt(data.timer.endAt);
+      } else {
+        setTimerEndAt(null);
       }
+      setTimerRemaining(0);
       setSelectedOption(null);
       setSubmitted(false);
       setCorrectAnswer(null);
@@ -115,6 +124,7 @@ export default function ParticipantSessionPage() {
     const handleTimerFinished = () => {
       setSubmitted(true);
       setTimerRemaining(0);
+      setTimerEndAt(null);
     };
 
     const handleAnswerSubmitted = (data: any) => {
@@ -139,9 +149,18 @@ export default function ParticipantSessionPage() {
       }
     };
 
+    const handleGameFinished = () => {
+      // Show a brief message, then redirect to join page
+      setStatus("finished");
+      setTimeout(() => navigate("/join"), 2000);
+    };
+
     const handleQuestionFinished = (data: any) => {
       setCorrectAnswer(data.correctAnswer);
       setLeaderboard(data.leaderboard);
+      // Show leaderboard after a question finishes
+      setShowLeaderboard(true);
+      setCurrentQuestion(null);
     };
 
     socket.on("session_started", handleSessionStarted);
@@ -153,6 +172,7 @@ export default function ParticipantSessionPage() {
     socket.on("answer_submitted", handleAnswerSubmitted);
     socket.on("leaderboard_updated", handleLeaderboardUpdated);
     socket.on("question_finished", handleQuestionFinished);
+    socket.on("game_finished", handleGameFinished);
 
     return () => {
       socket.off("session_started", handleSessionStarted);
@@ -164,14 +184,18 @@ export default function ParticipantSessionPage() {
       socket.off("answer_submitted", handleAnswerSubmitted);
       socket.off("leaderboard_updated", handleLeaderboardUpdated);
       socket.off("question_finished", handleQuestionFinished);
+      socket.off("game_finished", handleGameFinished);
     };
-  }, [sessionId, dispatch]);
+  }, [sessionId, dispatch, navigate]);
 
   useEffect(() => {
     if (!timerEndAt) return;
 
+    const endTime = typeof timerEndAt === "string" ? new Date(timerEndAt).getTime() : timerEndAt;
+    if (Number.isNaN(endTime)) return;
+
     const interval = setInterval(() => {
-      const remaining = Math.max(0, Math.ceil((timerEndAt - Date.now()) / 1000));
+      const remaining = Math.max(0, Math.ceil((endTime - Date.now()) / 1000));
       setTimerRemaining(remaining);
     }, 250);
 
@@ -206,7 +230,7 @@ export default function ParticipantSessionPage() {
         <div style={{ background: "white", padding: "16px", borderRadius: "12px", boxShadow: "0 4px 12px rgba(0,0,0,0.05)", marginBottom: "20px", textAlign: "center" }}>
           <h3 style={{ margin: 0, color: "#4f46e5" }}>Your Total Score: {totalScore}</h3>
         </div>
-        {currentQuestion ? (
+        {!showLeaderboard && currentQuestion ? (
           <div style={{ background: "white", padding: "20px", borderRadius: "12px", boxShadow: "0 8px 20px rgba(0,0,0,0.05)" }}>
             <h2>{currentQuestion.text}</h2>
             <div style={{ fontSize: "24px", fontWeight: "bold", marginBottom: "16px" }}>

@@ -4,6 +4,7 @@ import {
   useCreateSessionMutation,
   useGetSessionsQuery,
   useStartSessionMutation,
+  useDeleteSessionMutation
 } from "../services/sessionApi";
 import { Loading } from "../components/ui/loading";
 import type { Session } from "../types/session";
@@ -31,6 +32,7 @@ export default function AdminDashboard() {
   };
 
   const [startSession] = useStartSessionMutation();
+  const [deleteSession] = useDeleteSessionMutation();
 
   const handleStartSession = async (sessionId: number) => {
     try {
@@ -112,27 +114,51 @@ export default function AdminDashboard() {
               <p>
                 <strong>Status:</strong> {session.status}
               </p>
-              <button
-                onClick={() => handleStartSession(session.id)}
-                disabled={session.status !== "waiting" || startingSessionId === session.id}
-                style={{
-                  marginTop: "12px",
-                  width: "100%",
-                  padding: "10px 12px",
-                  borderRadius: "8px",
-                  border: "none",
-                  fontWeight: 600,
-                  backgroundColor:
-                    session.status !== "waiting" ? "#d1d5db" : "#16a34a",
-                  color: session.status !== "waiting" ? "#4b5563" : "white",
-                  cursor:
-                    session.status !== "waiting" || startingSessionId === session.id
-                      ? "not-allowed"
-                      : "pointer",
-                }}
-              >
-                {startingSessionId === session.id ? "Starting..." : "Start Session"}
-              </button>
+              <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "12px" }}>
+                <button
+                  onClick={() => handleStartSession(session.id)}
+                  disabled={session.status !== "waiting" || startingSessionId === session.id}
+                  style={{
+                    flex: 1,
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: "none",
+                    fontWeight: 600,
+                    backgroundColor:
+                      session.status !== "waiting" ? "#d1d5db" : "#16a34a",
+                    color: session.status !== "waiting" ? "#4b5563" : "white",
+                    cursor:
+                      session.status !== "waiting" || startingSessionId === session.id
+                        ? "not-allowed"
+                        : "pointer",
+                  }}
+                >
+                  {startingSessionId === session.id ? "Starting..." : "Start Session"}
+                </button>
+                <button
+                  onClick={async () => {
+                    const confirmed = window.confirm("Delete this session? This cannot be undone.");
+                    if (!confirmed) return;
+                    try {
+                      await deleteSession(session.id).unwrap();
+                    } catch (err) {
+                      console.error("Failed to delete session:", err);
+                    }
+                  }}
+                  style={{
+                    flex: 1,
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: "none",
+                    fontWeight: 600,
+                    backgroundColor: "#ef4444",
+                    color: "white",
+                    cursor: "pointer",
+                  }}
+                >
+                  Delete
+                </button>
+              </div>
             </div>
           ))}
         </div>
